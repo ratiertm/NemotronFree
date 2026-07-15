@@ -1,0 +1,22 @@
+name: keep-alive
+
+# Render 무료 플랜은 15분 미사용 시 잠들어(sleep) 다음 접속에 ~1분 콜드스타트가 생긴다.
+# 10분마다 헬스체크를 날려 서버를 깨어있게 유지한다. (월 사용시간 750h 내에서 상시 가동 가능)
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # 10분마다 (GitHub Actions 스케줄은 혼잡 시 지연될 수 있음)
+  workflow_dispatch: {}        # 수동 실행 버튼
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: |
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 https://nemotronfree.onrender.com/api/health || echo "000")
+            echo "attempt $i -> HTTP $code"
+            if [ "$code" = "200" ]; then exit 0; fi
+            sleep 15
+          done
+          echo "health check did not return 200 (server may be cold-starting)"
