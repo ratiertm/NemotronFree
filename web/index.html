@@ -118,7 +118,6 @@
     <select id="model" title="모델 선택">
       <option value="nvidia/nemotron-3-ultra-550b-a55b">Ultra</option>
       <option value="nvidia/nemotron-3-super-120b-a12b">Super</option>
-      <option value="nvidia/nemotron-3-nano-omni-30b-a3b">Nano</option>
     </select>
     <button id="reset" title="대화 초기화">초기화</button>
   </header>
@@ -227,12 +226,24 @@
       let answer = "", reasoning = "";
 
       try {
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: history, model: modelSel.value, thinking: true }),
-        });
-        if (!res.ok || !res.body) throw new Error("서버 응답 오류 (" + res.status + ")");
+        // 무료 서버(Render)는 절전에서 깨어날 때 502/503을 낸다.
+        // 서버가 자는 동안엔 서버측 재시도가 못 도니, 여기서 콜드스타트를 재시도한다.
+        let res;
+        for (let attempt = 0; attempt < 8; attempt++) {
+          res = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ messages: history, model: modelSel.value, thinking: true }),
+          });
+          if (res.ok && res.body) break;
+          if ([502, 503, 504].includes(res.status)) {
+            bubble.textContent = "⏳ 서버 깨우는 중… (무료 서버 절전 해제, 최대 1분)";
+            await new Promise((r) => setTimeout(r, 6000));
+            continue;
+          }
+          throw new Error("서버 응답 오류 (" + res.status + ")");
+        }
+        if (!res || !res.ok || !res.body) throw new Error("서버가 깨어나지 못했어요. 잠시 후 다시 보내주세요.");
 
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
