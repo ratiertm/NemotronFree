@@ -1,0 +1,14 @@
+# Render 무료 배포 설정 (Blueprint)
+# https://render.com → New → Blueprint → 이 저장소 선택
+services:
+  - type: web
+    name: nemotron-chat
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: NVIDIA_API_KEY
+        sync: false   # 대시보드에서 직접 입력(비밀값)
+      - key: NEMOTRON_MODEL
+        value: nvidia/nemotron-3-ultra-550b-a55b
