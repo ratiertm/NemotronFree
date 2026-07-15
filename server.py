@@ -13,6 +13,7 @@ Nemotron 채팅 웹앱 서버.
 """
 import json
 import os
+import time
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -66,35 +67,55 @@ def chat(req: ChatRequest):
     def sse(payload: dict) -> str:
         return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
+    def make_stream():
+        return client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=1,
+            top_p=0.95,
+            max_tokens=16384,
+            extra_body={
+                "chat_template_kwargs": {"enable_thinking": bool(req.thinking)},
+                # 생각(reasoning) 예산을 전체(max_tokens)보다 작게 두어
+                # 답변(content)용 토큰 공간을 반드시 남긴다.
+                "reasoning_budget": 8192,
+            },
+            stream=True,
+        )
+
     def event_stream():
-        try:
-            completion = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=1,
-                top_p=0.95,
-                max_tokens=16384,
-                extra_body={
-                    "chat_template_kwargs": {"enable_thinking": bool(req.thinking)},
-                    # 생각(reasoning) 예산을 전체(max_tokens)보다 작게 두어
-                    # 답변(content)용 토큰 공간을 반드시 남긴다.
-                    "reasoning_budget": 8192,
-                },
-                stream=True,
-            )
-            for chunk in completion:
-                if not chunk.choices:
-                    continue
-                delta = chunk.choices[0].delta
-                reasoning = getattr(delta, "reasoning_content", None)
-                if reasoning:
-                    yield sse({"type": "reasoning", "text": reasoning})
-                if delta.content:
-                    yield sse({"type": "content", "text": delta.content})
-        except Exception as e:  # noqa: BLE001
-            yield sse({"type": "error", "text": str(e)})
-        finally:
-            yield sse({"type": "done"})
+        # 무료 티어는 동시 처리 한도(ResourceExhausted)로 튕길 수 있어
+        # 아직 아무것도 전송하지 않은 경우에 한해 backoff 재시도한다.
+        MAX_RETRIES = 3
+        last_err = None
+        for attempt in range(MAX_RETRIES):
+            produced = False
+            try:
+                for chunk in make_stream():
+                    if not chunk.choices:
+                        continue
+                    delta = chunk.choices[0].delta
+                    reasoning = getattr(delta, "reasoning_content", None)
+                    if reasoning:
+                        produced = True
+                        yield sse({"type": "reasoning", "text": reasoning})
+                    if delta.content:
+                        produced = True
+                        yield sse({"type": "content", "text": delta.content})
+                yield sse({"type": "done"})
+                return
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+                if produced:
+                    # 이미 스트리밍이 시작됨 → 재시도 불가, 에러 그대로 전달
+                    yield sse({"type": "error", "text": str(e)})
+                    yield sse({"type": "done"})
+                    return
+                # 아직 아무것도 안 나감 → 잠깐 쉬고 재시도
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(1.5 * (attempt + 1))
+        yield sse({"type": "error", "text": "무료 API가 혼잡합니다(재시도 초과). 잠시 후 다시 시도해 주세요. [" + str(last_err) + "]"})
+        yield sse({"type": "done"})
 
     return StreamingResponse(
         event_stream(),
