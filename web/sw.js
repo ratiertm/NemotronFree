@@ -1,6 +1,6 @@
 // 최소 서비스워커: 설치 가능(PWA) 요건 충족 + 앱 셸 캐시.
 // API 응답은 캐시하지 않는다(항상 네트워크).
-const CACHE = "nemo-shell-v1";
+const CACHE = "nemo-shell-v2";
 const SHELL = ["/", "/index.html", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (e) => {
