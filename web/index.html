@@ -266,8 +266,20 @@
         bubble.innerHTML = renderMarkdown((answer || "") + "\n\n⚠️ " + err.message);
       } finally {
         bubble.classList.remove("typing");
-        if (!answer) bubble.textContent = "(응답 없음)";
-        history.push({ role: "assistant", content: answer || "(응답 없음)" });
+        if (answer) {
+          // 정상 응답: 히스토리에 저장
+          history.push({ role: "assistant", content: answer });
+        } else {
+          // 응답/에러 실패: 에러 메시지는 유지하고, 아무것도 없으면 안내 표시.
+          // 실패한 user 턴은 히스토리에서 롤백해 정합성 유지(다시 시도 가능).
+          if (bubble.innerHTML.trim() === "") {
+            const hint = reasoning
+              ? "(모델이 생각만 하고 답을 내지 못했어요. '생각 과정 보기'를 확인하거나 다시 시도해 주세요.)"
+              : "(응답 없음 — 잠시 후 다시 시도해 주세요. 무료 API 혼잡일 수 있어요.)";
+            bubble.textContent = hint;
+          }
+          history.pop();
+        }
         save(); busy = false; sendBtn.disabled = false; scrollDown();
       }
     }

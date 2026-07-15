@@ -76,7 +76,9 @@ def chat(req: ChatRequest):
                 max_tokens=16384,
                 extra_body={
                     "chat_template_kwargs": {"enable_thinking": bool(req.thinking)},
-                    "reasoning_budget": 16384,
+                    # 생각(reasoning) 예산을 전체(max_tokens)보다 작게 두어
+                    # 답변(content)용 토큰 공간을 반드시 남긴다.
+                    "reasoning_budget": 8192,
                 },
                 stream=True,
             )
